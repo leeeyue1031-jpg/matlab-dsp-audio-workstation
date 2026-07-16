@@ -58,10 +58,31 @@ classdef GraphicEqualizer < matlab.apps.AppBase
         MainApp = []
         CallbacksInitialized = false
         PlaybackPlayer = []
+        IsProcessed = false
     end
 
     methods (Access = private)
+
+        function setDefaultEqualizerValues(app)
+
+            % 明显但仍适合正常试听的默认均衡曲线。
+            app.Slider62.Value = 5.0;
+            app.Slider125.Value = 4.0;
+            app.Slider250.Value = 2.0;
+            app.Slider500.Value = -2.0;
+            app.Slider1k.Value = -4.0;
+            app.Slider2k.Value = -1.0;
+            app.Slider4k.Value = 3.0;
+            app.Slider8k.Value = 5.0;
+            app.Slider16k.Value = 4.0;
+
+            updateGainValueLabels(app);
+
+
+        end
+
         function initializeUserInterface(app)
+
             if app.CallbacksInitialized
                 return;
             end
@@ -78,6 +99,7 @@ classdef GraphicEqualizer < matlab.apps.AppBase
                 app.Slider16k};
 
             for k = 1:numel(sliders)
+
                 sliders{k}.ValueChangingFcn = ...
                     @(src, event)gainValueChanging(app, src, event);
 
@@ -103,9 +125,15 @@ classdef GraphicEqualizer < matlab.apps.AppBase
             app.StopPlaybackButton.ButtonPushedFcn = ...
                 @(src, event)stopPlayback(app, src, event);
 
+            % 初始状态下尚未载入音频，也没有均衡结果。
+            app.IsProcessed = false;
+            app.PlayEqualizedButton.Enable = 'off';
+            app.SaveAudioButton.Enable = 'off';
+
             app.CallbacksInitialized = true;
 
             updateGainValueLabels(app);
+
 
         end
 
@@ -145,26 +173,56 @@ classdef GraphicEqualizer < matlab.apps.AppBase
         end
 
         function gainValueChanging(app, source, event)
+
             updateOneGainLabel(app, source, event.Value);
+
+            % 滑块正在改变，已有处理结果已经过期。
+            app.IsProcessed = false;
+            app.PlayEqualizedButton.Enable = 'off';
         end
 
         function gainValueChanged(app, source, event)
+
             updateOneGainLabel(app, source, source.Value);
             if app.IsEQEnabled && app.HasAudio
                 refreshProcessedAudio(app);
             end
+            
         end
 
         function playEqualizedAudio(app, ~, ~)
-
             if ~app.HasAudio || ...
                     isempty(app.OriginalAudio) || ...
                     isempty(app.SampleRate)
 
-                uialert(app.UIFigure, ...
+                uialert( ...
+                    app.UIFigure, ...
                     '请先在主工作台中载入音频。', ...
                     '无法播放', ...
-                    'Icon', 'warning');
+                    'Icon', ...
+                    'warning');
+
+                return;
+            end
+
+            if ~app.IsEQEnabled
+                uialert( ...
+                    app.UIFigure, ...
+                    '请先打开均衡器。', ...
+                    '均衡器未打开', ...
+                    'Icon', ...
+                    'warning');
+
+                return;
+            end
+
+            if ~app.IsProcessed || isempty(app.ProcessedAudio)
+                uialert( ...
+                    app.UIFigure, ...
+                    '均衡音频尚未处理完成，请稍后再播放。', ...
+                    '尚未完成处理', ...
+                    'Icon', ...
+                    'warning');
 
                 return;
             end
@@ -172,17 +230,6 @@ classdef GraphicEqualizer < matlab.apps.AppBase
             stopPlayback(app);
 
             try
-                % 使用九个滑块当前的数值重新生成均衡音频
-                app.ProcessedAudio = applyGraphicEqualizer( ...
-                    app, ...
-                    app.OriginalAudio);
-
-                % 刷新均衡处理后的频谱
-                plotSpectrum( ...
-                    app, ...
-                    app.ProcessedSpectrumAxes, ...
-                    app.ProcessedAudio);
-
                 app.PlaybackPlayer = audioplayer( ...
                     app.ProcessedAudio, ...
                     app.SampleRate);
@@ -192,25 +239,32 @@ classdef GraphicEqualizer < matlab.apps.AppBase
             catch ME
                 app.PlaybackPlayer = [];
 
-                uialert(app.UIFigure, ...
+                uialert( ...
+                    app.UIFigure, ...
                     ME.message, ...
                     '均衡音频播放失败', ...
-                    'Icon', 'error');
+                    'Icon', ...
+                    'error');
             end
+
 
         end
 
-        function stopPlayback(app, ~, ~)
+        function stopPlayback(app, varargin)
 
+            % 当前没有播放器对象时，不需要执行停止操作。
             if isempty(app.PlaybackPlayer)
                 return;
             end
 
             try
+                % 播放器仍然有效时停止播放。
                 if isvalid(app.PlaybackPlayer)
                     stop(app.PlaybackPlayer);
                 end
             catch
+                % 即使播放器对象已经失效，也继续清空引用，
+                % 避免旧播放器影响下一次播放。
             end
 
             app.PlaybackPlayer = [];
@@ -218,12 +272,47 @@ classdef GraphicEqualizer < matlab.apps.AppBase
         end
 
         function equalizerSwitchChanged(app, source, event)
+
             app.IsEQEnabled = source.ValueIndex == 2;
+
             if ~app.HasAudio
-                uialert(app.UIFigure, '请先在主工作台中载入音频。', '尚未载入音频', 'Icon', 'warning');
+                app.IsProcessed = false;
+                app.PlayEqualizedButton.Enable = 'off';
+
+                uialert( ...
+                    app.UIFigure, ...
+                    '请先在主工作台中载入音频。', ...
+                    '尚未载入音频', ...
+                    'Icon', ...
+                    'warning');
+
                 return;
             end
-            refreshProcessedAudio(app);
+
+            if app.IsEQEnabled
+                % 打开均衡器后，使用当前九段参数重新处理音频。
+                refreshProcessedAudio(app);
+            else
+                % 关闭均衡器后，不允许播放“均衡音频”。
+                app.IsProcessed = false;
+                app.ProcessedAudio = app.OriginalAudio;
+                app.PlayEqualizedButton.Enable = 'off';
+
+                % 右侧频谱恢复显示原始音频频谱。
+                try
+                    plotSpectrum( ...
+                        app, ...
+                        app.ProcessedSpectrumAxes, ...
+                        app.OriginalAudio);
+                catch ME
+                    uialert( ...
+                        app.UIFigure, ...
+                        ME.message, ...
+                        '频谱刷新失败', ...
+                        'Icon', ...
+                        'error');
+                end
+            end
         end
 
         function updateGainValueLabels(app)
@@ -266,73 +355,210 @@ classdef GraphicEqualizer < matlab.apps.AppBase
         end
 
         function outputAudio = applyGraphicEqualizer(app, inputAudio)
-            gainsDB = getBandGainsDB(app);
-            if all(abs(gainsDB) < 1e-12)
-                outputAudio = inputAudio;
-                return;
+
+            if isempty(inputAudio)
+                error('输入音频为空，无法执行均衡处理。');
             end
+
+            if isempty(app.SampleRate) || ...
+                    ~isscalar(app.SampleRate) || ...
+                    app.SampleRate <= 0
+
+                error('采样率无效，无法执行均衡处理。');
+            end
+
+            % 读取九个滑块的dB增益。
+            gainsDB = getBandGainsDB(app);
+
+            % 把dB增益转换成线性倍数。
+            linearGains = 10 .^ (gainsDB / 20);
+
+            % 设计九段滤波器组。
             filters = designFilterBank(app);
-            outputAudio = inputAudio;
-            linearGain = 10.^(gainsDB / 20);
+
+            % 使用零矩阵保存所有频段叠加后的结果。
+            outputAudio = zeros(size(inputAudio));
+
+            validBandCount = 0;
+
             for k = 1:numel(filters)
-                if isempty(filters{k}) || abs(linearGain(k) - 1) < 1e-12
+
+                if isempty(filters{k})
                     continue;
                 end
+
                 coefficients = filters{k};
-                bandAudio = filter(coefficients{1}, coefficients{2}, inputAudio);
-                outputAudio = outputAudio + (linearGain(k) - 1) .* bandAudio;
+                b = coefficients{1};
+                a = coefficients{2};
+
+                % 从原始音频中提取当前频段。
+                bandAudio = filter(b, a, inputAudio);
+
+                % 对当前频段应用对应滑块的增益。
+                bandAudio = linearGains(k) .* bandAudio;
+
+                % 将处理后的频段加入最终结果。
+                outputAudio = outputAudio + bandAudio;
+
+                validBandCount = validBandCount + 1;
             end
+
+            if validBandCount == 0
+                error('没有成功生成任何有效均衡频段。');
+            end
+
+            % 去除滤波器启动阶段可能产生的直流偏移。
+            outputAudio = outputAudio - mean(outputAudio, 1);
+
+            % 防止输出超过[-1,1]而削波失真。
             peakValue = max(abs(outputAudio(:)));
+
             if peakValue > 0.98
                 outputAudio = outputAudio .* (0.98 / peakValue);
+            end
+
+            % 检查结果是否合法。
+            if any(~isfinite(outputAudio(:)))
+                error('均衡处理结果包含NaN或Inf。');
             end
         end
 
         function filters = designFilterBank(app)
+
+            fs = app.SampleRate;
+            nyquist = fs / 2;
+
+            if nyquist <= 20
+                error('音频采样率过低，无法设计九段均衡器。');
+            end
+
+            % 九段均衡器的中心频率。
             centers = [62 125 250 500 1000 2000 4000 8000 16000];
-            nyquist = app.SampleRate / 2;
-            safetyLimit = 0.999;
-            filters = cell(1, numel(centers));
+
+            % 相邻中心频率的几何平均值作为频段分界。
+            boundaries = sqrt(centers(1:end-1) .* centers(2:end));
+
+            filters = cell(1, 9);
+
             try
-                highEdge = min(centers(1) * sqrt(2), nyquist * safetyLimit);
-                if highEdge > 0 && highEdge < nyquist
-                    [b, a] = butter(2, highEdge / nyquist, 'low');
+                %% 第一段：低通
+                firstHigh = min(boundaries(1), nyquist * 0.98);
+
+                if firstHigh > 1
+                    [b, a] = butter(3, firstHigh / nyquist, 'low');
                     filters{1} = {b, a};
                 end
+
+                %% 第二段到第八段：带通
                 for k = 2:8
-                    lowEdge = centers(k) / sqrt(2);
-                    highEdge = centers(k) * sqrt(2);
-                    if lowEdge < nyquist * safetyLimit
-                        highEdge = min(highEdge, nyquist * safetyLimit);
-                        if highEdge > lowEdge
-                            [b, a] = butter(2, [lowEdge highEdge] / nyquist, 'bandpass');
-                            filters{k} = {b, a};
-                        end
+
+                    lowEdge = boundaries(k - 1);
+                    highEdge = boundaries(k);
+
+                    if lowEdge >= nyquist * 0.98
+                        continue;
                     end
+
+                    highEdge = min(highEdge, nyquist * 0.98);
+
+                    if highEdge <= lowEdge
+                        continue;
+                    end
+
+                    normalizedBand = [lowEdge highEdge] / nyquist;
+
+                    [b, a] = butter(3, normalizedBand, 'bandpass');
+
+                    filters{k} = {b, a};
                 end
-                lowEdge = centers(9) / sqrt(2);
-                if lowEdge < nyquist * safetyLimit
-                    [b, a] = butter(2, lowEdge / nyquist, 'high');
+
+                %% 第九段：高通
+                lastLow = boundaries(end);
+
+                if lastLow < nyquist * 0.98
+                    [b, a] = butter(3, lastLow / nyquist, 'high');
                     filters{9} = {b, a};
+                else
+                    % 采样率较低时，16kHz频段无法存在。
+                    filters{9} = [];
                 end
+
             catch ME
-                error('GraphicEqualizer:FilterDesignFailed', '滤波器设计失败：%s', ME.message);
+                error( ...
+                    'GraphicEqualizer:FilterDesignFailed', ...
+                    '九段滤波器设计失败：%s', ...
+                    ME.message);
             end
         end
 
         function refreshProcessedAudio(app)
+
             previousAudio = app.ProcessedAudio;
+
+            % 开始处理时，旧结果立即失效。
+            app.IsProcessed = false;
+            app.PlayEqualizedButton.Enable = 'off';
+            app.SaveAudioButton.Enable = 'off';
+
             try
-                if app.IsEQEnabled
-                    candidate = applyGraphicEqualizer(app, app.OriginalAudio);
-                else
-                    candidate = app.OriginalAudio;
+                if ~app.HasAudio || ...
+                        isempty(app.OriginalAudio) || ...
+                        isempty(app.SampleRate)
+
+                    error('当前没有可以处理的音频。');
                 end
+
+                if ~app.IsEQEnabled
+                    app.ProcessedAudio = app.OriginalAudio;
+
+                    plotSpectrum( ...
+                        app, ...
+                        app.ProcessedSpectrumAxes, ...
+                        app.ProcessedAudio);
+
+                    return;
+                end
+
+                candidate = applyGraphicEqualizer( ...
+                    app, ...
+                    app.OriginalAudio);
+
+                if isempty(candidate)
+                    error('均衡处理结果为空。');
+                end
+
+                if any(~isfinite(candidate(:)))
+                    error('均衡处理结果包含无效数值。');
+                end
+
+                if ~isequal(size(candidate), size(app.OriginalAudio))
+                    error('均衡处理结果的尺寸与原始音频不一致。');
+                end
+
                 app.ProcessedAudio = candidate;
-                plotSpectrum(app, app.ProcessedSpectrumAxes, candidate);
+
+                plotSpectrum( ...
+                    app, ...
+                    app.ProcessedSpectrumAxes, ...
+                    app.ProcessedAudio);
+
+                % 只有处理和频谱绘制全部成功，才标记处理完成。
+                app.IsProcessed = true;
+                app.PlayEqualizedButton.Enable = 'on';
+                app.SaveAudioButton.Enable = 'on';
+
             catch ME
                 app.ProcessedAudio = previousAudio;
-                uialert(app.UIFigure, ME.message, '均衡处理失败', 'Icon', 'error');
+                app.IsProcessed = false;
+                app.PlayEqualizedButton.Enable = 'off';
+                app.SaveAudioButton.Enable = 'off';
+
+                uialert( ...
+                    app.UIFigure, ...
+                    ME.message, ...
+                    '均衡处理失败', ...
+                    'Icon', ...
+                    'error');
             end
         end
 
@@ -365,29 +591,92 @@ classdef GraphicEqualizer < matlab.apps.AppBase
         end
 
         function saveAudio(app, source, event)
-            if ~app.HasAudio
-                uialert(app.UIFigure, '请先在主工作台中载入音频。', '无法保存', 'Icon', 'warning');
+
+            if ~app.HasAudio || ...
+                    isempty(app.OriginalAudio) || ...
+                    isempty(app.SampleRate)
+
+                uialert( ...
+                    app.UIFigure, ...
+                    '请先在主工作台中载入音频。', ...
+                    '无法保存', ...
+                    'Icon', ...
+                    'warning');
+
                 return;
             end
+
+            if ~app.IsEQEnabled
+                uialert( ...
+                    app.UIFigure, ...
+                    '请先打开均衡器并完成均衡处理。', ...
+                    '均衡器未打开', ...
+                    'Icon', ...
+                    'warning');
+
+                return;
+            end
+
+            if ~app.IsProcessed || isempty(app.ProcessedAudio)
+                uialert( ...
+                    app.UIFigure, ...
+                    '当前均衡音频尚未处理完成，无法保存。', ...
+                    '尚未完成处理', ...
+                    'Icon', ...
+                    'warning');
+
+                return;
+            end
+
             try
-                [~, baseName] = fileparts(app.CurrentSongName);
+                [~, baseName, ~] = fileparts(app.CurrentSongName);
+
                 if isempty(baseName)
                     baseName = 'audio';
                 end
-                [fileName, pathName] = uiputfile('*.wav', '保存均衡器音频', [baseName '_EQ.wav']);
-                if isequal(fileName, 0)
+
+                defaultFileName = [baseName '_EQ.wav'];
+
+                [fileName, pathName] = uiputfile( ...
+                    {'*.wav', 'WAV音频文件 (*.wav)'}, ...
+                    '保存均衡器音频', ...
+                    defaultFileName);
+
+                if isequal(fileName, 0) || isequal(pathName, 0)
                     return;
                 end
-                if app.IsEQEnabled
-                    audioData = app.ProcessedAudio;
-                else
-                    audioData = app.OriginalAudio;
+
+                audioData = app.ProcessedAudio;
+
+                if isempty(audioData)
+                    error('均衡处理结果为空，无法保存。');
                 end
+
+                if any(~isfinite(audioData(:)))
+                    error('均衡处理结果包含NaN或Inf，无法保存。');
+                end
+
                 fullPath = fullfile(pathName, fileName);
-                audiowrite(fullPath, audioData, app.SampleRate);
-                uialert(app.UIFigure, ['音频已保存至：' newline fullPath], '保存成功', 'Icon', 'success');
+
+                audiowrite( ...
+                    fullPath, ...
+                    audioData, ...
+                    app.SampleRate);
+
+                uialert( ...
+                    app.UIFigure, ...
+                    ['均衡音频已保存至：' newline fullPath], ...
+                    '保存成功', ...
+                    'Icon', ...
+                    'success');
+
             catch ME
-                uialert(app.UIFigure, ME.message, '保存失败', 'Icon', 'error');
+                uialert( ...
+                    app.UIFigure, ...
+                    ME.message, ...
+                    '保存失败', ...
+                    'Icon', ...
+                    'error');
             end
         end
 
@@ -447,12 +736,27 @@ classdef GraphicEqualizer < matlab.apps.AppBase
                     app.SourceFilePath = char(varargin{2});
                 end
                 app.HasAudio = true;
-                app.IsEQEnabled = false;
-                app.EqualizerSwitch.ValueIndex = 1;
+
+                % 设置默认九段均衡参数
+                setDefaultEqualizerValues(app);
+
+                % 默认打开均衡器
+                app.IsEQEnabled = true;
+                app.EqualizerSwitch.ValueIndex = 2;
+
+                % 处理还没有完成
+                app.IsProcessed = false;
+                app.PlayEqualizedButton.Enable = 'off';
+
                 app.CurrentSongLabel.Text = app.CurrentSongName;
-                updateGainValueLabels(app);
-                plotSpectrum(app, app.OriginalSpectrumAxes, app.OriginalAudio);
-                plotSpectrum(app, app.ProcessedSpectrumAxes, app.ProcessedAudio);
+
+                % 绘制原始频谱
+                plotSpectrum(app, ...
+                    app.OriginalSpectrumAxes, ...
+                    app.OriginalAudio);
+
+                % 自动执行一次均衡处理
+                refreshProcessedAudio(app);
             catch ME
                 uialert(app.UIFigure, ME.message, '载入音频失败', 'Icon', 'error');
                 return;

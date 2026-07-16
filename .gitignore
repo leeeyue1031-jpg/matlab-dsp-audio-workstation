@@ -1,0 +1,13 @@
+# MATLAB generated files
+*.asv
+*.autosave
+*.m~
+slprj/
+codegen/
+*.mex*
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+

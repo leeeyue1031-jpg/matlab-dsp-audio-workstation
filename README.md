@@ -16,6 +16,10 @@
 ├── MusicPlayer.mlapp            # 音乐播放器
 ├── GraphicEqualizer.mlapp       # 九段图形均衡器
 ├── DigitalReverb.mlapp          # 数字混响处理器
+├── bird_song.m                  # 基础版歌曲合成脚本
+├── makeNote.m                   # 基础版单音生成函数
+├── bird_song_violin.m           # 小提琴版歌曲合成脚本
+├── makeNote_violin.m            # 小提琴音色建模函数
 ├── 鸟之诗-基础版.wav             # 默认测试音频
 └── 鸟之诗-小提琴版.wav           # 默认测试音频
 ```
@@ -30,6 +34,14 @@
 
 部分滤波和音频处理功能可能需要 Signal Processing Toolbox 或 Audio Toolbox，具体取决于本机 MATLAB 版本。
 
+## 音频合成源码
+
+- 运行 `bird_song.m` 可使用 `makeNote.m` 合成基础版音频。
+- 运行 `bird_song_violin.m` 可使用 `makeNote_violin.m` 合成小提琴版音频。
+- 小提琴版本使用多谐波加法合成、包络、揉弦、弓压变化、弓毛噪声和简化琴体共振等 DSP 建模方法，不使用真实乐器采样。
+
+运行歌曲脚本前，请确保对应的 `makeNote` 函数与脚本位于同一目录，并将 MATLAB 当前文件夹切换到仓库根目录。
+
 ## 默认音频说明
 
 仓库中的 WAV 文件用于应用演示与功能测试。公开使用或再分发前，请确认你拥有相应音频的使用和传播授权；也可以替换为自有或开放许可的测试音频。
@@ -38,4 +50,3 @@
 
 - MATLAB
 - App Designer
-

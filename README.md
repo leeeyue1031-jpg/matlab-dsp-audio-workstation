@@ -14,8 +14,11 @@
 ```text
 .
 ├── MusicPlayer.mlapp            # 音乐播放器
+├── MusicPlayer.m                # 从 MusicPlayer.mlapp 导出的可读源码
 ├── GraphicEqualizer.mlapp       # 九段图形均衡器
+├── GraphicEqualizer.m           # 从 GraphicEqualizer.mlapp 导出的可读源码
 ├── DigitalReverb.mlapp          # 数字混响处理器
+├── DigitalReverb.m              # 从 DigitalReverb.mlapp 导出的可读源码
 ├── bird_song.m                  # 基础版歌曲合成脚本
 ├── makeNote.m                   # 基础版单音生成函数
 ├── bird_song_violin.m           # 小提琴版歌曲合成脚本
@@ -33,6 +36,12 @@
 5. 根据需要打开图形均衡器或数字混响应用进行处理。
 
 部分滤波和音频处理功能可能需要 Signal Processing Toolbox 或 Audio Toolbox，具体取决于本机 MATLAB 版本。
+
+## App Designer 源码
+
+仓库同时保留原始 `.mlapp` 工程和从当前工程导出的同名 `.m` 源码。GitHub 可以直接显示、搜索和比较 `.m` 文件中的属性、回调、DSP 处理逻辑及界面组件创建代码。
+
+`.mlapp` 是可在 App Designer 中继续编辑的主工程；同名 `.m` 是便于代码审阅的源码镜像。修改其中一方不会自动同步到另一方，应用更新后应重新导出源码。
 
 ## 音频合成源码
 
